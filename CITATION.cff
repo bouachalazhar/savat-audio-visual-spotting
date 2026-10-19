@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the article and the archived release."
+title: "SAVAT: Sports Audio-Visual Alignment Transformer for Action Spotting"
+type: software
+authors:
+  - family-names: Bouacha
+    given-names: Lazhar
+  - family-names: Wendling
+    given-names: Laurent
+  - family-names: Kurtz
+    given-names: Camille
+repository-code: "https://github.com/bouachalazhar/savat-audio-visual-spotting"
+license: Apache-2.0
+version: "1.0.0"
+date-released: "2026-10-19"
+preferred-citation:
+  type: conference-paper
+  title: "SAVAT: Sports Audio-Visual Alignment Transformer for Action Spotting"
+  authors:
+    - family-names: Bouacha
+      given-names: Lazhar
+    - family-names: Wendling
+      given-names: Laurent
+    - family-names: Kurtz
+      given-names: Camille
+  conference:
+    name: "Advanced Concepts for Intelligent Vision Systems (ACIVS)"
+  publisher:
+    name: "Springer"
+  year: 2026
+  notes: "Lecture Notes in Computer Science, in press"
