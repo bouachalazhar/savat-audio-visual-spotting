@@ -85,6 +85,50 @@ def test_normalizer_fit_and_transform() -> None:
     assert restored.medians == normalizer.medians
 
 
+def test_constant_indicator_still_penalises_degradation() -> None:
+    normalizer = ReliabilityNormalizer().fit(
+        [
+            {
+                "video": {"sharpness": 1.0, "exposure": 1.0, "stability": 1.0},
+                "audio": {
+                    "presence": 1.0,
+                    "stability": 1.0,
+                    "no_clipping": 1.0,
+                    "tonality": 1.0,
+                },
+            }
+        ]
+    )
+    perfect = normalizer.transform(
+        ReliabilityScores(
+            video=1.0,
+            audio=1.0,
+            video_indicators={"sharpness": 1.0, "exposure": 1.0, "stability": 1.0},
+            audio_indicators={
+                "presence": 1.0,
+                "stability": 1.0,
+                "no_clipping": 1.0,
+                "tonality": 1.0,
+            },
+        )
+    )
+    clipped = normalizer.transform(
+        ReliabilityScores(
+            video=1.0,
+            audio=1.0,
+            video_indicators={"sharpness": 1.0, "exposure": 1.0, "stability": 1.0},
+            audio_indicators={
+                "presence": 1.0,
+                "stability": 1.0,
+                "no_clipping": 0.5,
+                "tonality": 1.0,
+            },
+        )
+    )
+    assert perfect.audio == 1.0
+    assert clipped.audio < perfect.audio
+
+
 def test_normalizer_imputes_missing_indicators_with_training_median() -> None:
     normalizer = ReliabilityNormalizer().fit(
         [

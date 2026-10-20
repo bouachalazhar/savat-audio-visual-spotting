@@ -13,6 +13,7 @@ import math
 import os
 import time
 from dataclasses import asdict
+from datetime import timedelta
 from pathlib import Path
 
 import torch
@@ -196,7 +197,13 @@ def _distributed_context() -> tuple[int, int, int, bool]:
     world = int(os.environ.get("WORLD_SIZE", "1"))
     local = int(os.environ.get("LOCAL_RANK", "0"))
     if world > 1:
-        dist.init_process_group(backend="nccl" if torch.cuda.is_available() else "gloo")
+        # Rank 0 evaluates the full validation split and saves the checkpoint
+        # while the other ranks wait at a barrier; the default 10-minute NCCL
+        # timeout is too short for a real audio-visual validation pass.
+        dist.init_process_group(
+            backend="nccl" if torch.cuda.is_available() else "gloo",
+            timeout=timedelta(hours=2),
+        )
         return rank, world, local, True
     return rank, world, local, False
 

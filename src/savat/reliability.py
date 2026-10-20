@@ -180,9 +180,11 @@ class ReliabilityNormalizer:
             return max(0.0, min(1.0, value))
         low, high = self.bounds[key]
         if high - low < 1e-9:
-            # A constant indicator carries no ranking information. Preserve a
-            # zero signal (missing/degenerate modality) instead of promoting it.
-            return 1.0 if high > 0.0 else 0.0
+            # A constant indicator carries no ranking information. Keep the
+            # training constant at 1.0, but let lower values reduce the score.
+            if high <= 0.0:
+                return 0.0
+            return max(0.0, min(1.0, value / high))
         return max(0.0, min(1.0, (value - low) / (high - low)))
 
     def transform(self, scores: ReliabilityScores) -> ReliabilityScores:
