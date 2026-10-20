@@ -1,24 +1,30 @@
 # Provenance
 
-This repository was assembled from the private `sportiq` research codebase at
-commit `d1ec656e` (2026-10-19). The table below lists the correspondence between
-the public modules and their private sources. The public code was cleaned of
-local paths, cluster identifiers, project-specific settings and experiment
-orchestration; the algorithms and their tests were kept.
+This repository is a cleaned, standalone release of research code developed for
+the associated article. It was extracted from an internal research codebase;
+local filesystem paths, cluster identifiers, private dataset locations,
+experiment orchestration and project-specific configuration were removed. The
+algorithms, public APIs and tests were retained and adapted for this release.
 
-| Public path | Private source |
-| --- | --- |
-| `src/savat/data.py` | `src/sportiq/training/training_multimodal.py` (`MultimodalDataset`, media decoding), extended with grouped splits and reliability output |
-| `src/savat/model.py` | new: SAVAT dual transformer encoders, masked reconstruction, heads and modality dropout |
-| `src/savat/reliability.py` | new: reliability indicators and train-set normalisation |
-| `src/savat/fusion.py` | new: reliability-weighted fusion strategies |
-| `src/savat/alignment.py` | new: reliability-weighted symmetric InfoNCE |
-| `src/savat/train.py` | `src/sportiq/training/training_multimodal.py` (training loop, distributed execution), extended with the SAVAT objective |
-| `src/savat/evaluate.py` | new: Top-1, macro-F1 and average precision |
-| `src/savat/robustness.py` | new: pink noise, blur and desynchronisation harness |
+## Relationship to the article
 
-The private repository remains the development source. This public repository
-is the citable artefact associated with the article. No checkpoint, no
-SportVISTA clip and no SoccerNet clip is included. The CAV-MAE Sync
-initialisation used in the reported experiments is not redistributed; see the
-README for the exact scope.
+The public modules implement the described architecture and training
+objective:
+
+- dual video and audio transformer encoders with tubelet and log-Mel patches;
+- masked reconstruction and reliability-weighted contrastive alignment;
+- train-only reliability normalisation and reliability-weighted feature fusion;
+- clip-level transfer training and evaluation;
+- noise, blur and desynchronisation stress tests.
+
+The article's reported experiments use CAV-MAE Sync initialisation and the
+official CALF evaluation protocol. Those weights and the official evaluation
+scripts are not redistributed. The public code therefore provides the
+architecture and training objective, not a bit-for-bit reproduction of the
+reported numbers.
+
+## What is not included
+
+No SportVISTA clip, SoccerNet clip, trained checkpoint or CAV-MAE Sync weight is
+distributed. Broadcast and platform rights do not allow redistribution. The
+README documents the remaining scope differences.

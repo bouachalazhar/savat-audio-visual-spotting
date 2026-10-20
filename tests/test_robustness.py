@@ -52,7 +52,7 @@ def test_shift_video_zero_fills() -> None:
 
 def test_apply_corruption_dispatch() -> None:
     video = torch.randn(2, 3, 4, 32, 32)
-    spectrogram = torch.rand(2, 1, 64, 256)
+    spectrogram = torch.rand(2, 1, 64, 320)
     waveform = torch.randn(2, 16_000)
     noisy_video, noisy_spectrogram = apply_corruption(
         video, spectrogram, waveform, Corruption("noise", "pink_noise", 5.0)
@@ -70,9 +70,19 @@ def test_apply_corruption_dispatch() -> None:
 
 
 def test_default_conditions_cover_all_families() -> None:
-    conditions = default_corruptions(offsets=(0.5, 1.0))
+    conditions = default_corruptions()
     kinds = [condition.kind for condition in conditions]
     assert kinds[0] == "clean"
     assert "pink_noise" in kinds
     assert "blur" in kinds
-    assert kinds.count("desync") == 2
+    assert kinds.count("desync") == 4
+    assert {
+        condition.severity for condition in conditions if condition.kind == "desync"
+    } == {
+        -2.0,
+        -1.0,
+        1.0,
+        2.0,
+    }
+    assert conditions[1].severity == 10.0
+    assert conditions[2].severity == 1.0

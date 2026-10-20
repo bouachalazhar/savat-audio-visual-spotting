@@ -29,7 +29,7 @@ class SAVATConfig:
     video_patch: int = 16
     tubelet: int = 4
     audio_mels: int = 64
-    audio_time: int = 256
+    audio_time: int = 320
     audio_patch: int = 16
     embed_dim: int = 256
     depth: int = 4
@@ -133,9 +133,7 @@ class MaskedBranch(nn.Module):
         batch = tokens.shape[0]
 
         if mask_ratio <= 0.0:
-            sequence = torch.cat(
-                [self.cls_token.expand(batch, -1, -1), tokens], dim=1
-            )
+            sequence = torch.cat([self.cls_token.expand(batch, -1, -1), tokens], dim=1)
             encoded = self.encoder(sequence + self.position)
             return self.norm(encoded[:, 0]), None, None, None
 
@@ -200,9 +198,7 @@ class PatchEmbed2D(nn.Module):
 
     def __init__(self, patch: int, embed_dim: int) -> None:
         super().__init__()
-        self.projection = nn.Conv2d(
-            1, embed_dim, kernel_size=patch, stride=patch
-        )
+        self.projection = nn.Conv2d(1, embed_dim, kernel_size=patch, stride=patch)
 
     def forward(self, spectrogram: torch.Tensor) -> torch.Tensor:
         return self.projection(spectrogram)
@@ -223,14 +219,20 @@ class SAVAT(nn.Module):
         super().__init__()
         self.config = config or SAVATConfig()
         cfg = self.config
+        if cfg.num_frames % cfg.tubelet != 0:
+            raise ValueError("num_frames must be divisible by tubelet")
+        if cfg.image_size % cfg.video_patch != 0:
+            raise ValueError("image_size must be divisible by video_patch")
+        if cfg.audio_mels % cfg.audio_patch != 0:
+            raise ValueError("audio_mels must be divisible by audio_patch")
+        if cfg.audio_time % cfg.audio_patch != 0:
+            raise ValueError("audio_time must be divisible by audio_patch")
 
-        video_tokens = (
-            (cfg.num_frames // cfg.tubelet)
-            * (cfg.image_size // cfg.video_patch) ** 2
-        )
-        audio_tokens = (
-            (cfg.audio_mels // cfg.audio_patch)
-            * (cfg.audio_time // cfg.audio_patch)
+        video_tokens = (cfg.num_frames // cfg.tubelet) * (
+            cfg.image_size // cfg.video_patch
+        ) ** 2
+        audio_tokens = (cfg.audio_mels // cfg.audio_patch) * (
+            cfg.audio_time // cfg.audio_patch
         )
         video_patch_dim = 3 * cfg.tubelet * cfg.video_patch * cfg.video_patch
         audio_patch_dim = cfg.audio_patch * cfg.audio_patch
@@ -270,8 +272,15 @@ class SAVAT(nn.Module):
         video_mask_ratio: float = 0.0,
         audio_mask_ratio: float = 0.0,
         modality_dropout: float = 0.0,
+        reliability: torch.Tensor | None = None,
     ) -> SAVATOutput:
-        """Run both branches and return logits, embeddings and reconstructions."""
+        """Run both branches and return logits, embeddings and reconstructions.
+
+        When ``reliability`` is provided, the joint head receives reliability-
+        weighted audio and video features. This is the feature-level fusion of
+        the article; the decision-level strategies in :mod:`savat.fusion`
+        remain available as ablations.
+        """
         video_cls, video_recon, video_mask, video_target = self.video_branch(
             video, video_mask_ratio
         )
@@ -284,7 +293,20 @@ class SAVAT(nn.Module):
                 video_cls, audio_cls, modality_dropout
             )
 
-        joint = self.joint_head(torch.cat([video_cls, audio_cls], dim=1))
+        joint_video = video_cls
+        joint_audio = audio_cls
+        if reliability is not None:
+            if reliability.ndim != 2 or reliability.shape[1] != 2:
+                raise ValueError("reliability must have shape (B, 2)")
+            if reliability.shape[0] != video_cls.shape[0]:
+                raise ValueError("reliability batch size does not match the input")
+            weights = reliability.to(
+                device=video_cls.device, dtype=video_cls.dtype
+            ).clamp(0.0, 1.0)
+            joint_video = video_cls * weights[:, 0:1]
+            joint_audio = audio_cls * weights[:, 1:2]
+
+        joint = self.joint_head(torch.cat([joint_video, joint_audio], dim=1))
         return SAVATOutput(
             joint_logits=joint,
             video_logits=self.video_head(video_cls),
@@ -325,7 +347,7 @@ class SAVAT(nn.Module):
         strategy: str = "geometric",
     ) -> torch.Tensor:
         """Return reliability-weighted fused probabilities at inference."""
-        output = self.forward(video, audio)
+        output = self.forward(video, audio, reliability=reliability)
         weights = normalize_reliability(reliability)
         probabilities = {
             "video": torch.softmax(output.video_logits, dim=1),
@@ -337,9 +359,7 @@ class SAVAT(nn.Module):
 def count_parameters(model: nn.Module) -> int:
     """Return the number of trainable parameters."""
     return sum(
-        parameter.numel()
-        for parameter in model.parameters()
-        if parameter.requires_grad
+        parameter.numel() for parameter in model.parameters() if parameter.requires_grad
     )
 
 

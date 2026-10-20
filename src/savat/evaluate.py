@@ -19,6 +19,7 @@ from torch.utils.data import DataLoader
 from savat.data import MultimodalDataset, discover_clips
 from savat.fusion import geometric_fusion, reliability_weights
 from savat.model import SAVAT, SAVATConfig
+from savat.reliability import ReliabilityNormalizer
 from savat.utils import resolve_device, write_json
 
 
@@ -42,9 +43,7 @@ def confusion_matrix(
     return matrix
 
 
-def macro_f1(
-    targets: np.ndarray, predictions: np.ndarray, num_classes: int
-) -> float:
+def macro_f1(targets: np.ndarray, predictions: np.ndarray, num_classes: int) -> float:
     """Unweighted mean of the per-class F1 scores."""
     matrix = confusion_matrix(targets, predictions, num_classes)
     scores: list[float] = []
@@ -128,7 +127,7 @@ def collect_predictions(
         video = video.to(device)
         audio = audio.to(device)
         reliability = reliability.to(device)
-        output = model(video, audio)
+        output = model(video, audio, reliability=reliability)
 
         if fusion == "joint":
             logits = output.joint_logits
@@ -211,16 +210,24 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     device = resolve_device(args.device)
-    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     config = SAVATConfig(**checkpoint["config"])
     model = SAVAT(config).to(device)
     model.load_state_dict(checkpoint["state_dict"])
+    normalizer = ReliabilityNormalizer.from_state_dict(
+        checkpoint.get("reliability_normalizer", {})
+    )
 
-    clips, class_names = discover_clips(args.data_root)
+    class_names = list(checkpoint["class_names"])
+    clips, _data_labels = discover_clips(args.data_root, label_order=class_names)
     dataset = MultimodalDataset(
         clips,
         num_frames=config.num_frames,
         image_size=config.image_size,
+        duration=float(checkpoint.get("window_duration", 5.0)),
+        window_start=checkpoint.get("window_start"),
+        time_frames=int(checkpoint.get("time_frames", config.audio_time)),
+        normalizer=normalizer,
     )
     loader = DataLoader(
         dataset,
@@ -228,9 +235,7 @@ def main(argv: list[str] | None = None) -> int:
         shuffle=False,
         num_workers=args.workers,
     )
-    report = evaluate_model(
-        model, loader, device, class_names, fusion=args.fusion
-    )
+    report = evaluate_model(model, loader, device, class_names, fusion=args.fusion)
     report["checkpoint"] = str(args.checkpoint)
     report["data_root"] = str(args.data_root)
     write_json(args.output, report)

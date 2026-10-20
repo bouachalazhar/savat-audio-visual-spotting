@@ -10,6 +10,7 @@ technical descriptors, not calibrated probabilities.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from statistics import median
 
 import torch
 
@@ -141,13 +142,16 @@ class ReliabilityNormalizer:
 
     def __init__(self) -> None:
         self.bounds: dict[str, tuple[float, float]] = {}
+        self.medians: dict[str, float] = {}
 
     def fit(self, samples: list[dict[str, dict[str, float]]]) -> ReliabilityNormalizer:
-        """Fit bounds from raw indicator dictionaries.
+        """Fit bounds and medians from raw indicator dictionaries.
 
         Args:
             samples: One dictionary per clip, with ``video`` and ``audio``
-                keys, each mapping indicator names to raw values.
+                keys, each mapping indicator names to raw values. Missing
+                indicators are imputed with the training median at transform
+                time.
         """
         for modality, names in (
             ("video", VIDEO_INDICATORS),
@@ -159,28 +163,39 @@ class ReliabilityNormalizer:
                     for sample in samples
                     if name in sample.get(modality, {})
                 ]
+                key = f"{modality}.{name}"
                 if values:
-                    self.bounds[f"{modality}.{name}"] = (min(values), max(values))
+                    self.bounds[key] = (min(values), max(values))
+                    self.medians[key] = float(median(values))
+                else:
+                    self.bounds[key] = (0.0, 1.0)
+                    self.medians[key] = 0.5
         return self
 
-    def _normalise(self, modality: str, name: str, value: float) -> float:
+    def _normalise(self, modality: str, name: str, value: float | None) -> float:
         key = f"{modality}.{name}"
+        if value is None:
+            value = self.medians.get(key, 0.0)
         if key not in self.bounds:
             return max(0.0, min(1.0, value))
         low, high = self.bounds[key]
         if high - low < 1e-9:
-            return 1.0
+            # A constant indicator carries no ranking information. Keep the
+            # training constant at 1.0, but let lower values reduce the score.
+            if high <= 0.0:
+                return 0.0
+            return max(0.0, min(1.0, value / high))
         return max(0.0, min(1.0, (value - low) / (high - low)))
 
     def transform(self, scores: ReliabilityScores) -> ReliabilityScores:
         """Apply the fitted bounds and recompute both geometric means."""
         video = {
-            name: self._normalise("video", name, value)
-            for name, value in scores.video_indicators.items()
+            name: self._normalise("video", name, scores.video_indicators.get(name))
+            for name in VIDEO_INDICATORS
         }
         audio = {
-            name: self._normalise("audio", name, value)
-            for name, value in scores.audio_indicators.items()
+            name: self._normalise("audio", name, scores.audio_indicators.get(name))
+            for name in AUDIO_INDICATORS
         }
         return ReliabilityScores(
             video=_geometric_mean([video[name] for name in VIDEO_INDICATORS]),
@@ -188,6 +203,29 @@ class ReliabilityNormalizer:
             video_indicators=video,
             audio_indicators=audio,
         )
+
+    def state_dict(self) -> dict[str, object]:
+        """Return a JSON-serialisable state for checkpoint storage."""
+        return {
+            "bounds": {key: list(value) for key, value in self.bounds.items()},
+            "medians": dict(self.medians),
+        }
+
+    @classmethod
+    def from_state_dict(cls, state: dict[str, object]) -> ReliabilityNormalizer:
+        """Restore a normalizer saved by :meth:`state_dict`."""
+        normalizer = cls()
+        bounds = state.get("bounds", {})
+        medians = state.get("medians", {})
+        if not isinstance(bounds, dict) or not isinstance(medians, dict):
+            raise ValueError("invalid reliability normalizer state")
+        normalizer.bounds = {
+            str(key): (float(value[0]), float(value[1]))
+            for key, value in bounds.items()
+            if isinstance(value, (list, tuple)) and len(value) == 2
+        }
+        normalizer.medians = {str(key): float(value) for key, value in medians.items()}
+        return normalizer
 
 
 __all__ = [

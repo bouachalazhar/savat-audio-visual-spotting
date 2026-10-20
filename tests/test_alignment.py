@@ -50,8 +50,6 @@ def test_same_class_negatives_run() -> None:
     video = torch.randn(6, 8)
     audio = torch.randn(6, 8)
     labels = torch.tensor([0, 0, 1, 1, 2, 2])
-    loss = symmetric_infonce(
-        video, audio, labels=labels, same_class_negatives=True
-    )
+    loss = symmetric_infonce(video, audio, labels=labels, same_class_negatives=True)
     assert torch.isfinite(loss)
     assert float(loss) > 0
