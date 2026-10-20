@@ -71,6 +71,41 @@ def test_fused_probabilities_shape() -> None:
     assert torch.allclose(probabilities.sum(dim=1), torch.ones(3), atol=1e-5)
 
 
+def test_joint_head_uses_reliability_weights() -> None:
+    model = SAVAT(tiny_config())
+    model.eval()
+    video = torch.randn(2, 3, 8, 32, 32)
+    audio = torch.randn(2, 1, 16, 32)
+    balanced = model(video, audio, reliability=torch.ones(2, 2)).joint_logits
+    video_only = model(
+        video, audio, reliability=torch.tensor([[1.0, 0.0], [1.0, 0.0]])
+    ).joint_logits
+    assert not torch.allclose(balanced, video_only)
+
+
+def test_rejects_incompatible_token_grid() -> None:
+    config = SAVATConfig(
+        image_size=32,
+        num_frames=8,
+        video_patch=16,
+        tubelet=4,
+        audio_mels=16,
+        audio_time=30,
+        audio_patch=8,
+        embed_dim=32,
+        depth=1,
+        heads=4,
+        decoder_depth=1,
+        num_classes=3,
+    )
+    try:
+        SAVAT(config)
+    except ValueError as error:
+        assert "audio_time" in str(error)
+        return
+    raise AssertionError("incompatible audio token grid should raise")
+
+
 def test_invalid_modality_dropout() -> None:
     model = SAVAT(tiny_config())
     try:

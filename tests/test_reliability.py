@@ -6,6 +6,7 @@ import torch
 
 from savat.reliability import (
     ReliabilityNormalizer,
+    ReliabilityScores,
     audio_indicators,
     reliability_scores,
     video_indicators,
@@ -78,3 +79,41 @@ def test_normalizer_fit_and_transform() -> None:
     )
     assert 0.0 <= transformed.video <= 1.0
     assert 0.0 <= transformed.audio <= 1.0
+
+    restored = ReliabilityNormalizer.from_state_dict(normalizer.state_dict())
+    assert restored.bounds == normalizer.bounds
+    assert restored.medians == normalizer.medians
+
+
+def test_normalizer_imputes_missing_indicators_with_training_median() -> None:
+    normalizer = ReliabilityNormalizer().fit(
+        [
+            {
+                "video": {"sharpness": 0.2, "exposure": 0.4, "stability": 0.6},
+                "audio": {
+                    "presence": 0.2,
+                    "stability": 0.4,
+                    "no_clipping": 0.6,
+                    "tonality": 0.8,
+                },
+            },
+            {
+                "video": {"sharpness": 0.4, "exposure": 0.6, "stability": 0.8},
+                "audio": {
+                    "presence": 0.4,
+                    "stability": 0.6,
+                    "no_clipping": 0.8,
+                },
+            },
+        ]
+    )
+    scores = ReliabilityScores(
+        video=0.5,
+        audio=0.5,
+        video_indicators={"sharpness": 0.4},
+        audio_indicators={"presence": 0.4},
+    )
+    transformed = normalizer.transform(scores)
+    assert 0.0 <= transformed.video <= 1.0
+    assert 0.0 <= transformed.audio <= 1.0
+    assert normalizer.medians["audio.tonality"] == 0.8

@@ -19,7 +19,12 @@ import torchvision.transforms.functional as F
 from torch import nn
 from torch.utils.data import DataLoader
 
-from savat.data import MultimodalDataset, discover_clips, waveform_to_logmel
+from savat.data import (
+    AUDIO_TIME_FRAMES,
+    MultimodalDataset,
+    discover_clips,
+    waveform_to_logmel,
+)
 from savat.evaluate import (
     average_precision,
     confusion_matrix,
@@ -27,11 +32,12 @@ from savat.evaluate import (
     top1_accuracy,
 )
 from savat.model import SAVAT, SAVATConfig
+from savat.reliability import ReliabilityNormalizer, reliability_scores
 from savat.utils import resolve_device, seed_everything, write_json
 
 
 def add_pink_noise(
-    waveform: torch.Tensor, snr_db: float = 5.0, seed: int = 17
+    waveform: torch.Tensor, snr_db: float = 10.0, seed: int = 17
 ) -> torch.Tensor:
     """Add 1/f noise at a target signal-to-noise ratio.
 
@@ -60,7 +66,7 @@ def add_pink_noise(
 
 
 def gaussian_blur(
-    video: torch.Tensor, kernel_size: int = 7, sigma: float = 1.5
+    video: torch.Tensor, kernel_size: int = 7, sigma: float = 1.0
 ) -> torch.Tensor:
     """Apply a Gaussian blur to every frame of a ``(C, T, H, W)`` clip."""
     if video.ndim != 4:
@@ -113,6 +119,7 @@ def apply_corruption(
     *,
     sample_rate: int = 16_000,
     seed: int = 17,
+    time_frames: int = AUDIO_TIME_FRAMES,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Apply one corruption to a batch and return video and spectrogram.
 
@@ -131,7 +138,9 @@ def apply_corruption(
         noisy = torch.stack(waveforms, dim=0)
         spectrograms = torch.stack(
             [
-                waveform_to_logmel(noisy[index].reshape(-1), sample_rate)
+                waveform_to_logmel(
+                    noisy[index].reshape(-1), sample_rate, time_frames=time_frames
+                )
                 for index in range(noisy.shape[0])
             ]
         )
@@ -143,12 +152,12 @@ def apply_corruption(
         return blurred, spectrogram
     if corruption.kind == "desync":
         samples = int(round(corruption.severity * sample_rate))
-        shifted = torch.stack(
-            [shift_audio(item, samples=samples) for item in waveform]
-        )
+        shifted = torch.stack([shift_audio(item, samples=samples) for item in waveform])
         spectrograms = torch.stack(
             [
-                waveform_to_logmel(shifted[index].reshape(-1), sample_rate)
+                waveform_to_logmel(
+                    shifted[index].reshape(-1), sample_rate, time_frames=time_frames
+                )
                 for index in range(shifted.shape[0])
             ]
         )
@@ -166,31 +175,51 @@ def evaluate_condition(
     *,
     sample_rate: int = 16_000,
     seed: int = 17,
+    time_frames: int = AUDIO_TIME_FRAMES,
+    normalizer: ReliabilityNormalizer | None = None,
 ) -> dict[str, Any]:
-    """Evaluate one corruption and return metrics."""
+    """Evaluate one corruption and return metrics.
+
+    Reliability is recomputed on the corrupted signals, so a degraded modality
+    receives a lower weight instead of reusing the clean score.
+    """
     model.eval()
     targets: list[np.ndarray] = []
-    scores: list[np.ndarray] = []
+    score_batches: list[np.ndarray] = []
 
     for video, audio, waveform, _reliability, labels, _index in loader:
         video = video.to(device)
         audio = audio.to(device)
         waveform = waveform.to(device)
         video, audio = apply_corruption(
-            video, audio, waveform, corruption, sample_rate=sample_rate, seed=seed
+            video,
+            audio,
+            waveform,
+            corruption,
+            sample_rate=sample_rate,
+            seed=seed,
+            time_frames=time_frames,
         )
-        logits = model(video, audio).joint_logits
+        reliability_rows = []
+        for index in range(video.shape[0]):
+            scores = reliability_scores(video[index], audio[index])
+            if normalizer is not None:
+                scores = normalizer.transform(scores)
+            reliability_rows.append(scores.as_tensor())
+        reliability = torch.stack(reliability_rows).to(device)
+        logits = model(video, audio, reliability=reliability).joint_logits
         targets.append(labels.numpy())
-        scores.append(torch.softmax(logits, dim=1).cpu().numpy())
+        score_batches.append(torch.softmax(logits, dim=1).cpu().numpy())
 
     target_array = np.concatenate(targets)
-    score_array = np.concatenate(scores)
+    score_array = np.concatenate(score_batches)
     predictions = score_array.argmax(axis=1)
     per_class = average_precision(target_array, score_array, len(class_names))
     return {
         "condition": corruption.name,
         "kind": corruption.kind,
         "severity": corruption.severity,
+        "seed": seed,
         "clips": int(target_array.size),
         "top1": top1_accuracy(target_array, predictions),
         "macro_f1": macro_f1(target_array, predictions, len(class_names)),
@@ -208,30 +237,76 @@ def run_harness(
     class_names: list[str],
     corruptions: list[Corruption],
     *,
-    seed: int = 17,
+    seeds: tuple[int, ...] = (17,),
+    sample_rate: int = 16_000,
+    time_frames: int = AUDIO_TIME_FRAMES,
+    normalizer: ReliabilityNormalizer | None = None,
 ) -> dict[str, Any]:
-    """Evaluate every condition and report the drop from the clean reference."""
-    reports = [
-        evaluate_condition(model, loader, device, class_names, corruption, seed=seed)
-        for corruption in corruptions
-    ]
-    reference = reports[0]["mean_average_precision"] if reports else 0.0
+    """Evaluate every condition over seeds and report the clean-reference drop.
+
+    Each condition is evaluated once per seed. Metrics are averaged over seeds
+    and the per-seed runs are kept in the report for inspection.
+    """
+    if not seeds:
+        raise ValueError("at least one seed is required")
+    reports: list[dict[str, Any]] = []
+    for corruption in corruptions:
+        runs = [
+            evaluate_condition(
+                model,
+                loader,
+                device,
+                class_names,
+                corruption,
+                sample_rate=sample_rate,
+                seed=seed,
+                time_frames=time_frames,
+                normalizer=normalizer,
+            )
+            for seed in seeds
+        ]
+        metric_names = ("top1", "macro_f1", "mean_average_precision")
+        summary: dict[str, Any] = {
+            "condition": corruption.name,
+            "kind": corruption.kind,
+            "severity": corruption.severity,
+            "seeds": list(seeds),
+            "clips": runs[0]["clips"],
+            "runs": runs,
+        }
+        for name in metric_names:
+            values = np.asarray([run[name] for run in runs], dtype=np.float64)
+            summary[name] = float(values.mean())
+            summary[f"{name}_std"] = float(values.std(ddof=0))
+        reports.append(summary)
+
+    clean = next(
+        (report for report in reports if report["kind"] == "clean"),
+        reports[0] if reports else None,
+    )
+    reference = clean["mean_average_precision"] if clean is not None else 0.0
     for report in reports:
         report["delta_map"] = report["mean_average_precision"] - reference
-    return {"reference": reports[0] if reports else None, "conditions": reports}
+    return {"reference": clean, "conditions": reports}
 
 
 def default_corruptions(
-    noise_snr: float = 5.0, blur_sigma: float = 1.5, offsets: tuple[float, ...] = (0.5,)
+    noise_snr: float = 10.0,
+    blur_sigma: float = 1.0,
+    offsets: tuple[float, ...] = (-2.0, -1.0, 1.0, 2.0),
 ) -> list[Corruption]:
-    """Return the clean, pink noise, blur and desynchronisation conditions."""
+    """Return the clean, pink noise, blur and desynchronisation conditions.
+
+    Defaults follow the article's robustness protocol: 10 dB pink noise,
+    Gaussian blur with sigma 1.0, and offsets of -2, -1, +1 and +2 seconds.
+    """
     conditions = [
         Corruption("clean", "clean", 0.0),
         Corruption(f"pink_noise_{noise_snr:g}db", "pink_noise", noise_snr),
         Corruption(f"blur_sigma_{blur_sigma:g}", "blur", blur_sigma),
     ]
     conditions.extend(
-        Corruption(f"desync_{offset:g}s", "desync", offset) for offset in offsets
+        Corruption(f"desync_{offset:+g}s", "desync", offset) for offset in offsets
     )
     return conditions
 
@@ -244,10 +319,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--device", default="auto")
-    parser.add_argument("--noise-snr", type=float, default=5.0)
-    parser.add_argument("--blur-sigma", type=float, default=1.5)
+    parser.add_argument("--noise-snr", type=float, default=10.0)
+    parser.add_argument("--blur-sigma", type=float, default=1.0)
     parser.add_argument(
-        "--offsets", default="0.5,1.0,1.5,2.0", help="comma-separated seconds"
+        "--offsets",
+        default="-2,-1,1,2",
+        help="comma-separated seconds, signed offsets allowed",
+    )
+    parser.add_argument(
+        "--seeds", default="17,29,43", help="comma-separated generator seeds"
     )
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--output", type=Path, default=Path("robustness.json"))
@@ -255,28 +335,39 @@ def main(argv: list[str] | None = None) -> int:
 
     seed_everything(args.seed)
     device = resolve_device(args.device)
-    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     config = SAVATConfig(**checkpoint["config"])
     model = SAVAT(config).to(device)
     model.load_state_dict(checkpoint["state_dict"])
+    normalizer = ReliabilityNormalizer.from_state_dict(
+        checkpoint.get("reliability_normalizer", {})
+    )
 
-    clips, class_names = discover_clips(args.data_root)
+    class_names = list(checkpoint["class_names"])
+    clips, _data_labels = discover_clips(args.data_root, label_order=class_names)
     dataset = MultimodalDataset(
         clips,
         num_frames=config.num_frames,
         image_size=config.image_size,
+        duration=float(checkpoint.get("window_duration", 5.0)),
+        window_start=checkpoint.get("window_start"),
+        time_frames=int(checkpoint.get("time_frames", config.audio_time)),
+        normalizer=normalizer,
     )
     loader = DataLoader(
         dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers
     )
     offsets = tuple(float(value) for value in args.offsets.split(",") if value)
+    seeds = tuple(int(value) for value in args.seeds.split(",") if value)
     report = run_harness(
         model,
         loader,
         device,
         class_names,
         default_corruptions(args.noise_snr, args.blur_sigma, offsets),
-        seed=args.seed,
+        seeds=seeds,
+        time_frames=int(checkpoint.get("time_frames", config.audio_time)),
+        normalizer=normalizer,
     )
     report["checkpoint"] = str(args.checkpoint)
     report["data_root"] = str(args.data_root)
