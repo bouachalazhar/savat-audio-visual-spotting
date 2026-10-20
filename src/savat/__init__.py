@@ -20,4 +20,4 @@ robustness   Pink noise, blur and desynchronisation stress tests.
 from __future__ import annotations
 
 __all__ = ["__version__"]
-__version__ = "1.0.0"
+__version__ = "1.0.2"
