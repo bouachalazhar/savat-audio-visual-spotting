@@ -1,0 +1,18 @@
+# Frozen-encoder linear probing profile.
+#
+# The encoder is loaded from a self-supervised checkpoint and never updated.
+# Only a LayerNorm + linear classifier is trained on reliability-weighted
+# audio-visual features. These probe hyper-parameters are implementation
+# choices, not constants reported in the manuscript.
+data_root: data/sportvista
+checkpoint: runs/savat_pretrain/best.pt
+output_dir: runs/savat_probe
+epochs: 50
+batch_size: 256
+learning_rate: 0.001
+weight_decay: 0.0001
+class_weights: balanced
+balanced_batches: true
+validation_fraction: 0.15
+test_fraction: 0.15
+seed: 17

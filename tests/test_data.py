@@ -12,6 +12,7 @@ import torch
 
 from savat.data import (
     ClipSample,
+    checkpoint_window_duration,
     decode_media,
     discover_clips,
     frames_to_tensor,
@@ -134,8 +135,8 @@ def test_decode_media_without_audio(tmp_path: Path) -> None:
 
     video, audio, spectrogram = decode_media(path, num_frames=4, image_size=32)
     assert video.shape == (3, 4, 32, 32)
-    assert audio.shape == (16_000 * 5,)
-    assert spectrogram.shape == (1, 64, 320)
+    assert audio.shape == (16_000 * 4,)
+    assert spectrogram.shape == (1, 64, 256)
 
 
 def _write_av_video(path: Path, *, seconds: int = 3, rate: int = 6) -> None:
@@ -224,3 +225,29 @@ def test_decode_media_uses_the_requested_window(tmp_path: Path) -> None:
 def test_clip_sample_fields() -> None:
     sample = ClipSample(Path("a.mp4"), 0, "football", "match")
     assert sample.group == "match"
+
+
+def test_discover_clips_rejects_a_missing_checkpoint_class(tmp_path: Path) -> None:
+    root = make_tree(tmp_path / "data")
+    with pytest.raises(ValueError, match="checkpoint labels absent"):
+        discover_clips(root, label_order=["football", "tennis", "hockey"])
+
+
+def test_discover_clips_rejects_an_unknown_dataset_class(tmp_path: Path) -> None:
+    root = make_tree(tmp_path / "data")
+    with pytest.raises(ValueError, match="labels absent from the checkpoint"):
+        discover_clips(root, label_order=["football"])
+
+
+def test_discover_clips_ignores_directories_without_media(tmp_path: Path) -> None:
+    root = make_tree(tmp_path / "data")
+    (root / "run").mkdir()
+    (root / "run" / "best.pt").write_bytes(b"")
+    clips, labels = discover_clips(root)
+    assert labels == ["football", "tennis"]
+    assert len(clips) == 8
+
+
+def test_checkpoint_window_duration_keeps_the_legacy_default() -> None:
+    assert checkpoint_window_duration({}) == pytest.approx(5.0)
+    assert checkpoint_window_duration({"window_duration": 4.0}) == pytest.approx(4.0)

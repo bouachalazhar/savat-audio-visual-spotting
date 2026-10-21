@@ -1,6 +1,6 @@
 [project]
 name = "savat"
-version = "1.0.2"
+version = "1.1.0"
 description = "Audio-visual action spotting with reliability-aware fusion and contrastive alignment"
 readme = "README.md"
 authors = [{ name = "Lazhar Bouacha", email = "bouacha.lazhar@icloud.com" }]
@@ -30,6 +30,7 @@ dev = ["pytest>=8.3", "ruff>=0.6"]
 savat-train = "savat.train:main"
 savat-evaluate = "savat.evaluate:main"
 savat-robustness = "savat.robustness:main"
+savat-linear-probe = "savat.linear_probe:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -16,7 +16,12 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from savat.data import MultimodalDataset, discover_clips
+from savat.config import parse_config_args
+from savat.data import (
+    MultimodalDataset,
+    checkpoint_window_duration,
+    discover_clips,
+)
 from savat.fusion import geometric_fusion, reliability_weights
 from savat.model import SAVAT, SAVATConfig
 from savat.reliability import ReliabilityNormalizer
@@ -123,7 +128,7 @@ def collect_predictions(
     all_predictions: list[np.ndarray] = []
     all_scores: list[np.ndarray] = []
 
-    for video, audio, _waveform, reliability, labels, _index in loader:
+    for video, audio, _waveform, reliability, labels, _index, _groups in loader:
         video = video.to(device)
         audio = audio.to(device)
         reliability = reliability.to(device)
@@ -189,6 +194,7 @@ def evaluate_model(
 def main(argv: list[str] | None = None) -> int:
     """Command-line entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--batch-size", type=int, default=8)
@@ -207,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
         ],
     )
     parser.add_argument("--output", type=Path, default=Path("metrics.json"))
-    args = parser.parse_args(argv)
+    args = parse_config_args(parser, argv, known_only=True)
 
     device = resolve_device(args.device)
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
@@ -224,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
         clips,
         num_frames=config.num_frames,
         image_size=config.image_size,
-        duration=float(checkpoint.get("window_duration", 5.0)),
+        duration=checkpoint_window_duration(checkpoint),
         window_start=checkpoint.get("window_start"),
         time_frames=int(checkpoint.get("time_frames", config.audio_time)),
         normalizer=normalizer,

@@ -1,3 +1,8 @@
+# Self-supervised pretraining profile for SportVISTA.
+#
+# Objective: 0.40 * video reconstruction + 0.30 * audio reconstruction
+#            + 0.30 * reliability-weighted audio-visual InfoNCE.
+# No supervised classification term is used during pretraining.
 data_root: data/sportvista
 output_dir: runs/savat_pretrain
 epochs: 75
@@ -7,17 +12,24 @@ weight_decay: 0.05
 warmup_epochs: 5
 num_frames: 16
 image_size: 112
+window_duration: 4.0
+audio_time: 256
 embed_dim: 256
 depth: 4
 heads: 8
 decoder_depth: 2
 dropout: 0.1
-mask_ratio: 0.75
-alignment_weight: 0.1
-reconstruction_weight: 0.1
+video_mask_ratio: 0.75
+audio_mask_ratio: 0.50
+alignment_weight: 0.30
+video_reconstruction_weight: 0.40
+audio_reconstruction_weight: 0.30
+classification_weight: 0.0
 temperature: 0.07
-modality_dropout: 0.1
+modality_dropout: 0.0
 same_class_negatives: true
+balanced_batches: true
+selection_metric: alignment_loss
 seed: 17
 validation_fraction: 0.15
 test_fraction: 0.15

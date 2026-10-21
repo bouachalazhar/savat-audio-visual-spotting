@@ -1,5 +1,12 @@
+# Generic supervised adaptation profile, shown for SoccerNet-style clips.
+#
+# This is NOT the article's CALF transfer protocol: the official CALF
+# temporally-aware loss, the SoccerNet evaluation server and the lambda_m=0.20
+# modality-dropout branch are not implemented in this repository. The profile
+# keeps the same data pipeline and frozen/unfrozen encoder choices but uses a
+# standard clip-level cross-entropy objective.
 data_root: data/soccernet
-output_dir: runs/savat_soccernet
+output_dir: runs/savat_soccernet_generic
 epochs: 30
 batch_size: 4
 learning_rate: 0.00005
@@ -7,17 +14,25 @@ weight_decay: 0.05
 warmup_epochs: 2
 num_frames: 16
 image_size: 112
+window_duration: 4.0
+audio_time: 256
 embed_dim: 256
 depth: 4
 heads: 8
 decoder_depth: 2
 dropout: 0.1
-mask_ratio: 0.5
+video_mask_ratio: 0.50
+audio_mask_ratio: 0.50
 alignment_weight: 0.05
-reconstruction_weight: 0.05
+video_reconstruction_weight: 0.05
+audio_reconstruction_weight: 0.05
+classification_weight: 1.0
+unimodal_ce_weight: 0.5
 temperature: 0.07
-modality_dropout: 0.2
+modality_dropout: 0.25
 same_class_negatives: true
+balanced_batches: true
+selection_metric: macro_f1
 seed: 17
 validation_fraction: 0.15
 test_fraction: 0.15
