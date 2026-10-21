@@ -506,20 +506,12 @@ def train(args: argparse.Namespace) -> Path:
 
     train_labels = [clip.label for clip in train_clips]
     if args.balanced_batches:
-        # Keep the rank-local shards equal so that every DDP rank performs the
-        # same number of optimizer steps. A global epoch length not divisible by
-        # the world size would otherwise leave one rank with an extra batch and
-        # hang the next collective.
-        balanced_size = len(train_dataset)
-        if world > 1:
-            balanced_size -= balanced_size % world
-            if balanced_size == 0:
-                raise ValueError(
-                    "balanced DDP training needs at least one sample per rank"
-                )
+        # The sampler emits complete, class-balanced batches and shards whole
+        # batches across ranks so every rank performs the same number of steps.
         train_sampler: Sampler[int] | None = BalancedClassSampler(
             train_labels,
-            num_samples=balanced_size,
+            num_samples=len(train_dataset),
+            batch_size=args.batch_size,
             seed=args.seed,
             rank=rank,
             world_size=world,

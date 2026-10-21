@@ -85,6 +85,19 @@ def test_group_aware_negatives_fall_back_when_no_cross_group_negative_exists() -
     assert torch.isfinite(loss)
 
 
+def test_singleton_classes_fall_back_to_global_negatives() -> None:
+    video = torch.eye(3)
+    audio = torch.eye(3)
+    loss = symmetric_infonce(
+        video,
+        audio,
+        labels=torch.tensor([0, 1, 2]),
+        same_class_negatives=True,
+    )
+    assert torch.isfinite(loss)
+    assert float(loss) > 0.0
+
+
 def test_groups_require_labels() -> None:
     with pytest.raises(ValueError, match="labels are required"):
         symmetric_infonce(

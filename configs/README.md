@@ -21,8 +21,8 @@ known-only mode so one shared file can contain options for several commands.
 | Temporal window | 4 s for both streams | `window_duration: 4.0` |
 | Video sampling | 16 frames | `num_frames: 16` |
 | Audio representation | 256 log-Mel frames | `audio_time: 256` |
-| Batch sampling | Class-balanced | `balanced_batches: true` with `BalancedClassSampler` |
-| Contrastive negatives | Same class, excluding the same source group | `same_class_negatives: true`; the sampler receives group IDs |
+| Batch sampling | Class-balanced with same-class pairs | `balanced_batches: true` with `BalancedClassSampler`; each batch contains at least two examples per selected class |
+| Contrastive negatives | Same class, excluding the same source group | `same_class_negatives: true`; source groups are passed to the loss |
 | Pretraining selection | Alignment objective, not a random classifier | `selection_metric: alignment_loss` |
 | Linear probing | Frozen encoder, linear classifier | `savat-linear-probe`, `LayerNorm + Linear` |
 | Transfer protocol | CALF with temporal targets and official evaluation | **Not implemented.** `transfer_soccernet.yaml` is a generic clip-level supervised baseline. |

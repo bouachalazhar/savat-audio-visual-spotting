@@ -1,6 +1,6 @@
 [project]
 name = "savat"
-version = "1.1.0"
+version = "1.1.1"
 description = "Audio-visual action spotting with reliability-aware fusion and contrastive alignment"
 readme = "README.md"
 authors = [{ name = "Lazhar Bouacha", email = "bouacha.lazhar@icloud.com" }]
