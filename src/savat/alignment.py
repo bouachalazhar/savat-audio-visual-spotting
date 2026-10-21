@@ -68,6 +68,8 @@ def symmetric_infonce(
         if labels.shape[0] != batch:
             raise ValueError("one label per embedding is required")
         same = labels.unsqueeze(0) == labels.unsqueeze(1)
+        identity = torch.eye(batch, dtype=torch.bool, device=logits.device)
+        fallback = torch.ones_like(identity)
         if groups is None:
             allowed = same
         else:
@@ -77,17 +79,18 @@ def symmetric_infonce(
             same_group = groups.unsqueeze(0) == groups.unsqueeze(1)
             # The diagonal is the positive pair: it belongs to the same group
             # by construction and must not be masked out.
-            same_group = same_group & ~torch.eye(
-                batch, dtype=torch.bool, device=logits.device
-            )
+            same_group = same_group & ~identity
             allowed = same & ~same_group
-            # If a class contains fewer than two source groups in this batch,
-            # fall back to same-class negatives rather than producing a
-            # zero-loss row with no admissible negative at all.
-            has_negative = (
-                allowed & ~torch.eye(batch, dtype=torch.bool, device=logits.device)
-            ).any(dim=1, keepdim=True)
-            allowed = torch.where(has_negative, allowed, same)
+            fallback = ~same_group
+        # If an anchor has no admissible same-class negative in this batch,
+        # fall back to all non-self clips (or all cross-group clips first) so
+        # the row does not silently contribute a zero alignment loss.
+        has_negative = (allowed & ~identity).any(dim=1, keepdim=True)
+        fallback_has_negative = (fallback & ~identity).any(dim=1, keepdim=True)
+        fallback = torch.where(
+            fallback_has_negative, fallback, torch.ones_like(identity)
+        )
+        allowed = torch.where(has_negative, allowed, fallback)
         logits = logits.masked_fill(~allowed, float("-inf"))
 
     weights = (

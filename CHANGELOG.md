@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.1 — 2026-10-21
+
+Patch release.
+
+- Construct balanced training batches from a small set of classes with at
+  least two examples per selected class, so same-class contrastive negatives
+  are actually present instead of leaving zero-loss anchors.
+- Shard complete batches across DDP ranks so every rank keeps the same number
+  of optimizer steps.
+- Fall back to cross-group and then all non-self negatives when an anchor has
+  no admissible same-class negative, keeping validation selection finite.
+- Added regression tests for same-class pairs and singleton-class fallback.
+
 ## 1.1.0 — 2026-10-21
 
 Protocol-fidelity release.

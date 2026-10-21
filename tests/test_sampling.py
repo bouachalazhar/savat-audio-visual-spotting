@@ -45,3 +45,14 @@ def test_balanced_sampler_has_equal_rank_lengths_when_divisible() -> None:
         for rank in range(3)
     }
     assert lengths == {2}
+
+
+def test_balanced_sampler_batches_contain_same_class_pairs() -> None:
+    labels = [label for label in range(11) for _ in range(8)]
+    sampler = BalancedClassSampler(labels, num_samples=80, batch_size=8, seed=5)
+    indices = list(sampler)
+    assert len(indices) == 80
+    for start in range(0, len(indices), 8):
+        batch_labels = [labels[index] for index in indices[start : start + 8]]
+        counts = np.bincount(batch_labels)
+        assert np.all(counts[counts > 0] >= 2)

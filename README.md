@@ -34,8 +34,8 @@ transferred to action spotting or evaluated with a frozen-encoder linear probe.
    contrastive loss uses $w_i = r_v(i)\,r_a(i)$ as sample weights. With
    `same_class_negatives: true`, negatives must share the anchor's label and
    must not come from the same source group; when no such negative exists in a
-   batch, the implementation falls back to same-class negatives rather than
-   producing an empty mask.
+   batch, the implementation falls back to cross-group clips and ultimately to
+   all other clips rather than producing an empty mask.
 6. **Feature-level fusion** (`savat.model`): the joint head concatenates the
    reliability-weighted video and audio class tokens. `savat.fusion` provides
    arithmetic, geometric, hard-selection and unimodal decision-level ablations;
@@ -115,8 +115,9 @@ $$
 
 The profile uses AdamW, batch size 8, learning rate $10^{-4}$, 75 epochs, a
 five-epoch warm-up and cosine decay. Validation selection uses the alignment
-loss, not a randomly initialised classification head. Balanced batches and
-same-class, group-aware negatives are enabled.
+loss, not a randomly initialised classification head. The balanced sampler
+constructs each batch from a small set of classes with at least two examples
+per selected class, and same-class, group-aware negatives are enabled.
 
 The test split is evaluated with the best checkpoint after training. For the
 self-supervised profile, `history.json` records `test_alignment` (loss and
