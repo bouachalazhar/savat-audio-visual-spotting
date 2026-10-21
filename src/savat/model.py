@@ -29,7 +29,7 @@ class SAVATConfig:
     video_patch: int = 16
     tubelet: int = 4
     audio_mels: int = 64
-    audio_time: int = 320
+    audio_time: int = 256
     audio_patch: int = 16
     embed_dim: int = 256
     depth: int = 4

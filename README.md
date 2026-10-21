@@ -7,35 +7,42 @@ Reference code for the audio-visual representation learning method described in:
 > Systems (ACIVS 2026), Lecture Notes in Computer Science, in press.
 
 SAVAT learns a joint audio-visual representation from sports video. Two
-transformer encoders process video tubelets and log-Mel patches, a contrastive
-objective aligns their embeddings, and per-modality reliability scores
-down-weight degraded pairs. The representation is then transferred to an
-action spotting task.
+transformer encoders process video tubelets and log-Mel patches, a
+reliability-weighted contrastive objective aligns their class tokens, and
+masked reconstruction regularises each modality. The representation can then be
+transferred to action spotting or evaluated with a frozen-encoder linear probe.
 
 ## Method
 
-1. **Dual encoding** (`savat.model`): a 3D tubelet embedding and a spectrogram
+1. **Common audio-visual window** (`savat.data`): a clip is decoded once over a
+   centred 4 s window. The video branch uniformly samples 16 frames from that
+   window and the audio branch produces 256 log-Mel frames from the same
+   interval. `--window-start` fixes the window for an ablation.
+2. **Dual encoding** (`savat.model`): a 3D tubelet embedding and a spectrogram
    patch embedding feed two transformer encoders. Each branch exposes a class
-   token, a unimodal head and a reconstruction head.
-2. **Masked reconstruction** (`savat.model`): a configurable fraction of
-   tokens is masked; a lightweight decoder reconstructs the masked patches.
-   Masking is applied independently to each modality, and the reconstruction
-   error is weighted by each modality's reliability.
-3. **Reliability indicators** (`savat.reliability`): audio presence, temporal
+   token, a unimodal classification head and a reconstruction head.
+3. **Masked reconstruction**: 75 % of the video tokens and 50 % of the audio
+   tokens are masked by default. A lightweight decoder reconstructs the masked
+   patches, and the per-sample error is weighted by the reliability of the
+   corresponding modality.
+4. **Reliability indicators** (`savat.reliability`): audio presence, temporal
    stability, clipping and tonality; video sharpness, exposure and temporal
-   stability. They are aggregated with a geometric mean, so one collapsed
-   indicator lowers the whole score. Min-max bounds and missing-value medians
-   are fitted on the training partition only and stored in the checkpoint.
-4. **Reliability-weighted InfoNCE** (`savat.alignment`): the symmetric
-   contrastive loss is weighted by the product of the two reliability scores.
-   With labels, negatives can be restricted to the same normalised class.
-5. **Fusion** (`savat.model`): the joint head concatenates reliability-weighted
-   video and audio class tokens, which is the feature-level fusion used by the
-   default evaluation. `savat.fusion` additionally provides arithmetic,
-   geometric, hard-selection and unimodal decision-level ablations.
-6. **Modality dropout** (`savat.model`): during training, one branch can be
-   replaced by a learned null embedding, which prepares the transfer stage for
-   missing audio or video.
+   stability. They are aggregated with a geometric mean. Min-max bounds and
+   missing-value medians are fitted on the training partition only and stored
+   in the checkpoint.
+5. **Reliability-weighted InfoNCE** (`savat.alignment`): the symmetric
+   contrastive loss uses $w_i = r_v(i)\,r_a(i)$ as sample weights. With
+   `same_class_negatives: true`, negatives must share the anchor's label and
+   must not come from the same source group; when no such negative exists in a
+   batch, the implementation falls back to same-class negatives rather than
+   producing an empty mask.
+6. **Feature-level fusion** (`savat.model`): the joint head concatenates the
+   reliability-weighted video and audio class tokens. `savat.fusion` provides
+   arithmetic, geometric, hard-selection and unimodal decision-level ablations;
+   those are not the default training path.
+7. **Modality dropout** (`savat.model`): one branch can be replaced by a learned
+   null embedding. The paper pretraining profile disables it; the generic
+   transfer profile uses it as a robustness regulariser.
 
 ## Installation
 
@@ -52,66 +59,52 @@ uv sync --extra dev
 Each split is a directory of labelled clips:
 
 ```text
-sportvista/
-  football/clip_001.mp4
-  football/clip_002.mp4
-  tennis/clip_003.mp4
-  ...
-```
-
-The label is the first directory below the data root. The group used by the
-grouped split is the relative parent directory when clips are nested:
-
-```text
-sportvista/
+SportVISTA/
   football/match_001/clip_001.mp4
   football/match_001/clip_002.mp4
   football/match_002/clip_003.mp4
+  tennis/match_003/clip_004.mp4
+  ...
 ```
 
+The label is the first directory below the data root. The source group is the
+relative parent directory, so every clip from one match stays in one partition.
 For a flat label directory, the group falls back to the file stem with a
-trailing index removed, so `match_001` and `match_002` both map to `match`.
+trailing index removed (`match_001` and `match_002` both map to `match`).
 Nested directories are the unambiguous option and are recommended for a
 match-level protocol.
 
+Directories without any media file are ignored, which lets an output directory
+live next to the data without becoming a class.
+
 The default split is 70/15/15, stratified by label and grouped by source. The
-manuscript uses seeds 17, 29 and 43; the split rejects an empty partition
-instead of silently leaking a group.
+fractions are configurable. The split rejects an empty partition instead of
+silently leaking a group. The test partition is evaluated after training and
+its metrics are written to `history.json`.
 
-Video and audio are decoded from the same temporal window. By default the
-window is five seconds, centred on the clip. `--window-duration` changes its
-length and `--window-start` fixes its start for an ablation. The audio branch
-uses 320 log-Mel frames, matching the model's default `audio_time`; the video
-branch uniformly samples 16 frames from the same window.
+Video and audio are decoded from the same temporal window. The current
+implementation uses a 4 s window and 256 log-Mel frames. Older checkpoints keep
+their own `window_duration` and `time_frames` metadata and remain loadable at
+evaluation and probing time.
 
-## Training
-
-Pretraining on an eleven-class corpus:
+## Pretraining (paper objective)
 
 ```bash
 uv run savat-train --config configs/pretrain_sportvista.yaml
 ```
 
-Transfer to a three-class SoccerNet setup:
-
-```bash
-uv run savat-train --config configs/transfer_soccernet.yaml
-```
-
-Every YAML key maps to a command-line option, and explicit flags override the
-file. The default objective is
+The paper pretraining objective has no supervised cross-entropy term:
 
 $$
-\mathcal{L} = \mathcal{L}_{\text{joint}}
-+ \tfrac{1}{2}\left(\mathcal{L}_{v} + \mathcal{L}_{a}\right)
-+ \lambda_{\text{align}} \mathcal{L}_{\text{InfoNCE}}
-+ \lambda_{\text{rec}} \mathcal{L}_{\text{rec}} .
+\mathcal{L}
+= 0.40\,\mathcal{L}^{v}_{\mathrm{rec}}
++ 0.30\,\mathcal{L}^{a}_{\mathrm{rec}}
++ 0.30\,\mathcal{L}_{\mathrm{align}}.
 $$
 
-The contrastive term uses weights $w_i = r_v(i)\,r_a(i)$, and the masked
-reconstruction term $\mathcal{L}_{\text{rec}}$ is the reliability-weighted
-mean of the per-sample video and audio patch errors. Each reliability score is
-the geometric mean of its indicators:
+The contrastive term uses weights $w_i = r_v(i)\,r_a(i)$. The reconstruction
+term is the reliability-weighted mean of the per-sample video and audio patch
+errors. Each reliability score is the geometric mean of its indicators:
 
 $$
 r_v = \left(\prod_{k=1}^{p} v_k\right)^{1/p},
@@ -119,7 +112,63 @@ r_v = \left(\prod_{k=1}^{p} v_k\right)^{1/p},
 r_a = \left(\prod_{k=1}^{q} a_k\right)^{1/q}.
 $$
 
-Checkpoints are selected on validation macro-F1.
+The profile uses AdamW, batch size 8, learning rate $10^{-4}$, 75 epochs, a
+five-epoch warm-up and cosine decay. Validation selection uses the alignment
+loss, not a randomly initialised classification head. Balanced batches and
+same-class, group-aware negatives are enabled.
+
+The test split is evaluated with the best checkpoint after training. For the
+self-supervised profile, `history.json` records `test_alignment` (loss and
+paired clip retrieval accuracy); no classification metric is reported because
+the classification heads were not trained.
+
+## Generic supervised transfer
+
+```bash
+uv run savat-train --config configs/transfer_soccernet.yaml
+```
+
+This profile is a **generic clip-level transfer baseline**, not the article's
+CALF protocol. It enables the supervised term:
+
+$$
+\mathcal{L}
+= \lambda_v \mathcal{L}^{v}_{\mathrm{rec}}
++ \lambda_a \mathcal{L}^{a}_{\mathrm{rec}}
++ \lambda_{\mathrm{align}} \mathcal{L}_{\mathrm{align}}
++ \lambda_{\mathrm{cls}}
+\left(
+\mathcal{L}_{\mathrm{joint}}
++ \lambda_{\mathrm{uni}}
+\left(\mathcal{L}_{v} + \mathcal{L}_{a}\right)
+\right),
+$$
+
+where the joint and unimodal logits are trained with a standard clip-level
+cross-entropy.
+The transfer profile uses $\lambda_{\mathrm{cls}}=1$, $\lambda_{\mathrm{uni}}=0.5$,
+$\lambda_{\mathrm{align}}=0.05$, $\lambda_v=\lambda_a=0.05$ and selects on
+validation macro-F1. It is provided to adapt a checkpoint to a new labelled
+dataset; it does not implement CALF temporal targets, SoccerNet's official
+evaluation server or the article's $\lambda_m=0.20$ modality-dropout branch.
+
+## Frozen-encoder linear probe
+
+The classification heads are not trained during self-supervised pretraining.
+Use the dedicated probe rather than `savat-evaluate` if the goal is to measure
+the learned representation:
+
+```bash
+uv run savat-linear-probe \
+  --config configs/linear_probe_sportvista.yaml
+```
+
+The encoder is frozen and kept in evaluation mode. Features are the
+reliability-weighted concatenation of the two class tokens, and only a
+`LayerNorm + Linear` head is trained. The command writes `probe.pt` and
+`metrics.json` with validation and test Top-1, macro-F1, mean average precision
+and confusion matrices. The probe uses the training reliability normaliser
+stored in the source checkpoint.
 
 ## Evaluation
 
@@ -131,12 +180,17 @@ uv run savat-evaluate \
   --output metrics.json
 ```
 
-`joint` is the default and evaluates the reliability-weighted feature fusion
-used for training. `geometric`, `arithmetic`, `hard`, `video_only` and
-`audio_only` are decision-level ablations. The report contains Top-1,
-macro-F1, per-class average precision, mean average precision and the confusion
-matrix. The checkpoint's class order and reliability normaliser are reused, so
-evaluation data are never used to refit normalisation.
+`joint` is the default and evaluates the reliability-weighted feature fusion.
+`geometric`, `arithmetic`, `hard`, `video_only` and `audio_only` are
+decision-level ablations. The report contains Top-1, macro-F1, per-class
+average precision, mean average precision and the confusion matrix. The
+checkpoint's class order and reliability normaliser are reused, so evaluation
+data are never used to refit normalisation.
+
+For a self-supervised checkpoint, the classification numbers from
+`savat-evaluate` are not meaningful because the heads were never trained; use
+`savat-linear-probe`. `savat-evaluate` is appropriate for a checkpoint produced
+by a supervised transfer run.
 
 ## Robustness
 
@@ -151,12 +205,22 @@ uv run savat-robustness \
   --output robustness.json
 ```
 
-The defaults follow the manuscript protocol: 10 dB pink noise, Gaussian blur
-with sigma 1.0, signed audio shifts of -2, -1, +1 and +2 seconds, and seeds 17,
-29 and 43. Each condition is evaluated for every seed and the report contains
-both the runs and their mean/standard deviation. Reliability is recomputed on
-the corrupted signals before fusion. Noise and blur alter one modality only;
-the shift leaves both signals intact but breaks their correspondence.
+The defaults follow the manuscript stress-test protocol: 10 dB pink noise,
+Gaussian blur with sigma 1.0, signed audio shifts of -2, -1, +1 and +2 seconds,
+and seeds 17, 29 and 43. Each condition is evaluated for every seed and the
+report contains both the runs and their mean and standard deviation.
+Reliability is recomputed on the corrupted signals before fusion. Noise and
+blur alter one modality only; the shift leaves both signals intact but breaks
+their correspondence.
+
+## Configuration
+
+The YAML files under `configs/` are complete, readable profiles. Every key maps
+to a command-line option, and an explicit flag overrides the YAML value.
+Unknown keys are rejected by the training and probe commands; shared profiles
+are read in known-only mode by evaluation and robustness. See
+[`configs/README.md`](configs/README.md) for the profile table and the legacy
+aliases.
 
 ## Scope and differences from the article
 
@@ -168,17 +232,20 @@ following points delimit what it reproduces:
   initialisation by default.
 - The public joint head applies reliability weights to the two class tokens
   before concatenation. It is a feature-level analogue of the article's
-  weighted fusion, not a line-by-line reproduction of its internal
-  projection blocks.
+  weighted fusion, not a line-by-line reproduction of its internal projection
+  blocks.
 - The reported SoccerNet number follows the CALF protocol (temporal targets,
   non-maximum suppression and tolerance-based avg-mAP). This repository
-  provides clip-level transfer training and classification average precision,
-  not the official CALF evaluation script. The two metrics are not
+  provides a generic clip-level transfer baseline and classification average
+  precision, not the official CALF evaluation script. The two metrics are not
   interchangeable.
 - No SportVISTA clip, SoccerNet clip or trained checkpoint is distributed.
   Broadcast and platform rights do not allow redistribution.
 - Reliability indicators are technical descriptors. They are not calibrated
   probabilities and do not measure semantic synchronisation.
+- The pretraining, transfer and probe hyper-parameters are declared explicitly
+  in YAML, but tuning choices such as the probe learning rate are
+  implementation choices, not constants reported in the manuscript.
 
 These differences mean that the numbers in the article cannot be reproduced
 bit-for-bit from this repository alone. The architecture, objectives, fusion
@@ -189,16 +256,19 @@ reimplemented and extended on data the user is allowed to process.
 
 ```text
 src/savat/
-  data.py         media decoding, dataset, grouped split
-  model.py        SAVAT encoders, masked reconstruction, heads
-  reliability.py  indicators and train-set normalisation
-  fusion.py       reliability-weighted fusion strategies
-  alignment.py    symmetric weighted InfoNCE
-  train.py        training loop and objective
-  evaluate.py     Top-1, macro-F1, average precision
-  robustness.py   pink noise, blur, desynchronisation
-configs/          pretraining and transfer configurations
-tests/            unit and smoke tests
+  config.py        YAML loading and command-line precedence
+  data.py          media decoding, dataset, grouped split
+  model.py         SAVAT encoders, masked reconstruction, heads
+  reliability.py   indicators and train-set normalisation
+  fusion.py        reliability-weighted fusion strategies
+  alignment.py     symmetric weighted InfoNCE
+  sampling.py      balanced class sampler
+  train.py         training loop and objective
+  evaluate.py      Top-1, macro-F1, average precision
+  linear_probe.py  frozen-encoder probe
+  robustness.py    pink noise, blur, desynchronisation
+configs/           pretraining, transfer and probe profiles
+tests/             unit and smoke tests
 ```
 
 ## Tests
@@ -212,6 +282,10 @@ uv build
 
 The tests build synthetic audio-visual clips with PyAV, so no external data is
 needed. CI runs lint, format, unit tests and a wheel build.
+
+## Release history
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence
 

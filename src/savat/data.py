@@ -29,8 +29,8 @@ from savat.reliability import (
 MEDIA_SUFFIXES = {".mp4", ".avi", ".mkv", ".mov", ".m4v"}
 VIDEO_MEAN = (0.43216, 0.394666, 0.37645)
 VIDEO_STD = (0.22803, 0.22145, 0.216989)
-AUDIO_TIME_FRAMES = 320
-WINDOW_DURATION = 5.0
+AUDIO_TIME_FRAMES = 256
+WINDOW_DURATION = 4.0
 _GROUP_SUFFIX = re.compile(r"[_-]?\d+$")
 
 
@@ -66,7 +66,9 @@ def discover_clips(
     labels = sorted(
         directory.name
         for directory in root.iterdir()
-        if directory.is_dir() and not directory.name.startswith(".")
+        if directory.is_dir()
+        and not directory.name.startswith(".")
+        and any(path.suffix.lower() in MEDIA_SUFFIXES for path in directory.rglob("*"))
     )
     if not labels:
         raise FileNotFoundError(f"no label directory found under {root}")
@@ -74,6 +76,11 @@ def discover_clips(
         unknown = set(labels) - set(label_order)
         if unknown:
             raise ValueError(f"labels absent from the checkpoint: {sorted(unknown)}")
+        missing = set(label_order) - set(labels)
+        if missing:
+            raise ValueError(
+                f"checkpoint labels absent from the dataset: {sorted(missing)}"
+            )
         labels = list(label_order)
     label_index = {name: index for index, name in enumerate(labels)}
 
@@ -314,13 +321,25 @@ def decode_media(
 
 
 class MultimodalDataset(
-    Dataset[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int, int]]
+    Dataset[
+        tuple[
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            int,
+            int,
+            int,
+        ]
+    ]
 ):
-    """One item per clip: video, spectrogram, reliability, label and index.
+    """One item per clip: video, spectrogram, reliability, label and indices.
 
     The reliability tensor contains ``[video, audio]`` geometric-mean scores
     computed from the decoded signals. It is a training signal, not an
-    annotation, and is therefore computed on the fly.
+    annotation, and is therefore computed on the fly. ``group_index`` is the
+    integer identifier of the source group used by group-aware contrastive
+    negatives; it never crosses a split.
     """
 
     def __init__(
@@ -342,6 +361,10 @@ class MultimodalDataset(
         self.window_start = window_start
         self.time_frames = time_frames
         self.normalizer = normalizer
+        self.group_names = sorted({clip.group for clip in clips})
+        self.group_index = {
+            group: index for index, group in enumerate(self.group_names)
+        }
 
     def __len__(self) -> int:
         return len(self.clips)
@@ -361,7 +384,15 @@ class MultimodalDataset(
 
     def __getitem__(
         self, index: int
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int, int]:
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        int,
+        int,
+        int,
+    ]:
         clip = self.clips[index]
         video, waveform, spectrogram = decode_media(
             clip.path,
@@ -374,7 +405,15 @@ class MultimodalDataset(
         scores = reliability_scores(video, spectrogram)
         if self.normalizer is not None:
             scores = self.normalizer.transform(scores)
-        return video, spectrogram, waveform, scores.as_tensor(), clip.label, index
+        return (
+            video,
+            spectrogram,
+            waveform,
+            scores.as_tensor(),
+            clip.label,
+            index,
+            self.group_index[clip.group],
+        )
 
 
 def fit_reliability_normalizer(

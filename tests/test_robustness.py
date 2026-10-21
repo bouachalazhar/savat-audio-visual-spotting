@@ -52,7 +52,7 @@ def test_shift_video_zero_fills() -> None:
 
 def test_apply_corruption_dispatch() -> None:
     video = torch.randn(2, 3, 4, 32, 32)
-    spectrogram = torch.rand(2, 1, 64, 320)
+    spectrogram = torch.rand(2, 1, 64, 256)
     waveform = torch.randn(2, 16_000)
     noisy_video, noisy_spectrogram = apply_corruption(
         video, spectrogram, waveform, Corruption("noise", "pink_noise", 5.0)

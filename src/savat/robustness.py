@@ -19,6 +19,7 @@ import torchvision.transforms.functional as F
 from torch import nn
 from torch.utils.data import DataLoader
 
+from savat.config import parse_config_args
 from savat.data import (
     AUDIO_TIME_FRAMES,
     MultimodalDataset,
@@ -187,7 +188,7 @@ def evaluate_condition(
     targets: list[np.ndarray] = []
     score_batches: list[np.ndarray] = []
 
-    for video, audio, waveform, _reliability, labels, _index in loader:
+    for video, audio, waveform, _reliability, labels, _index, _groups in loader:
         video = video.to(device)
         audio = audio.to(device)
         waveform = waveform.to(device)
@@ -314,6 +315,7 @@ def default_corruptions(
 def main(argv: list[str] | None = None) -> int:
     """Command-line entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--batch-size", type=int, default=8)
@@ -331,7 +333,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--output", type=Path, default=Path("robustness.json"))
-    args = parser.parse_args(argv)
+    args = parse_config_args(parser, argv, known_only=True)
 
     seed_everything(args.seed)
     device = resolve_device(args.device)
@@ -349,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
         clips,
         num_frames=config.num_frames,
         image_size=config.image_size,
-        duration=float(checkpoint.get("window_duration", 5.0)),
+        duration=float(checkpoint.get("window_duration", 4.0)),
         window_start=checkpoint.get("window_start"),
         time_frames=int(checkpoint.get("time_frames", config.audio_time)),
         normalizer=normalizer,

@@ -24,6 +24,7 @@ def symmetric_infonce(
     temperature: float = 0.07,
     sample_weights: torch.Tensor | None = None,
     labels: torch.Tensor | None = None,
+    groups: torch.Tensor | None = None,
     same_class_negatives: bool = False,
 ) -> torch.Tensor:
     """Symmetric InfoNCE between paired video and audio embeddings.
@@ -37,6 +38,9 @@ def symmetric_infonce(
             the batch but do not contribute to the loss.
         labels: Optional ``(B,)`` class labels. Required when
             ``same_class_negatives`` is true.
+        groups: Optional ``(B,)`` source-group identifiers. When provided with
+            ``same_class_negatives``, a clip is never used as a negative for
+            another clip from the same source group.
         same_class_negatives: Restrict negative pairs to clips sharing a label.
 
     Returns:
@@ -50,6 +54,8 @@ def symmetric_infonce(
         raise ValueError("temperature must be positive")
     if same_class_negatives and labels is None:
         raise ValueError("labels are required for same-class negatives")
+    if groups is not None and labels is None:
+        raise ValueError("groups require labels for group-aware negatives")
 
     video = _l2_normalize(video)
     audio = _l2_normalize(audio)
@@ -62,8 +68,27 @@ def symmetric_infonce(
         if labels.shape[0] != batch:
             raise ValueError("one label per embedding is required")
         same = labels.unsqueeze(0) == labels.unsqueeze(1)
-        negative_mask = ~same
-        logits = logits.masked_fill(negative_mask, float("-inf"))
+        if groups is None:
+            allowed = same
+        else:
+            groups = torch.as_tensor(groups, device=logits.device).view(-1)
+            if groups.shape[0] != batch:
+                raise ValueError("one group per embedding is required")
+            same_group = groups.unsqueeze(0) == groups.unsqueeze(1)
+            # The diagonal is the positive pair: it belongs to the same group
+            # by construction and must not be masked out.
+            same_group = same_group & ~torch.eye(
+                batch, dtype=torch.bool, device=logits.device
+            )
+            allowed = same & ~same_group
+            # If a class contains fewer than two source groups in this batch,
+            # fall back to same-class negatives rather than producing a
+            # zero-loss row with no admissible negative at all.
+            has_negative = (
+                allowed & ~torch.eye(batch, dtype=torch.bool, device=logits.device)
+            ).any(dim=1, keepdim=True)
+            allowed = torch.where(has_negative, allowed, same)
+        logits = logits.masked_fill(~allowed, float("-inf"))
 
     weights = (
         torch.ones(batch, device=logits.device, dtype=logits.dtype)
