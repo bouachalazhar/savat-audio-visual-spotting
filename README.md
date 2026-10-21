@@ -85,7 +85,8 @@ its metrics are written to `history.json`.
 Video and audio are decoded from the same temporal window. The current
 implementation uses a 4 s window and 256 log-Mel frames. Older checkpoints keep
 their own `window_duration` and `time_frames` metadata and remain loadable at
-evaluation and probing time.
+evaluation and probing time; a checkpoint that predates this metadata uses the
+historical 5 s window fallback.
 
 ## Pretraining (paper objective)
 

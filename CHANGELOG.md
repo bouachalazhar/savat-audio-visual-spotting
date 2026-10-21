@@ -8,7 +8,8 @@ Protocol-fidelity release.
   ratios (`0.75/0.50`) and loss weights (`0.40/0.30/0.30`), with no supervised
   cross-entropy term.
 - Decoded one common 4 s audio-visual window with 16 video frames and 256
-  log-Mel frames; older checkpoints keep their own temporal metadata.
+  log-Mel frames; older checkpoints keep their own temporal metadata and use
+  the historical 5 s fallback when that metadata is absent.
 - Added class-balanced batches and same-class contrastive negatives that exclude
   the same source group.
 - Added a frozen-encoder `savat-linear-probe` command and checkpoint persistence

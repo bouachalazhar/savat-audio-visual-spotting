@@ -10,6 +10,22 @@ from typing import Any
 import numpy as np
 import torch
 import yaml
+from yaml.nodes import MappingNode
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects repeated mapping keys."""
+
+    def construct_mapping(
+        self, node: MappingNode, deep: bool = False
+    ) -> dict[Any, Any]:
+        keys: list[Any] = []
+        for key_node, _value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in keys:
+                raise ValueError(f"duplicate YAML key: {key!r}")
+            keys.append(key)
+        return super().construct_mapping(node, deep=deep)
 
 
 def resolve_device(requested: str = "auto") -> torch.device:
@@ -45,7 +61,7 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 def load_yaml(path: Path) -> dict[str, Any]:
     """Load a YAML configuration file."""
     with Path(path).open(encoding="utf-8") as handle:
-        payload = yaml.safe_load(handle) or {}
+        payload = yaml.load(handle, Loader=_UniqueKeyLoader) or {}
     if not isinstance(payload, dict):
         raise ValueError(f"configuration must be a mapping: {path}")
     return payload

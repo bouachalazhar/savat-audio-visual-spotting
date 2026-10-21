@@ -13,8 +13,16 @@ from savat.config import (
     validate_train_args,
 )
 from savat.train import build_parser, parse_args
+from savat.utils import load_yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_duplicate_yaml_keys_are_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "profile.yaml"
+    path.write_text("epochs: 1\nepochs: 2\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="duplicate YAML key"):
+        load_yaml(path)
 
 
 def test_pretraining_profile_matches_the_manuscript_objective() -> None:

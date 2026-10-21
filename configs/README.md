@@ -96,4 +96,6 @@ normaliser, the class order and the architecture configuration. Evaluation,
 robustness and linear probing read those values from the checkpoint rather than
 guessing new defaults. A checkpoint trained with the earlier 5 s / 320-frame
 configuration therefore keeps its own temporal metadata; it is not silently
-reinterpreted with the 4 s / 256-frame defaults.
+reinterpreted with the 4 s / 256-frame defaults. If a legacy checkpoint lacks
+the window metadata entirely, evaluation and probing use the historical 5 s
+fallback rather than assuming the new 4 s default.

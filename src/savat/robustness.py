@@ -23,6 +23,7 @@ from savat.config import parse_config_args
 from savat.data import (
     AUDIO_TIME_FRAMES,
     MultimodalDataset,
+    checkpoint_window_duration,
     discover_clips,
     waveform_to_logmel,
 )
@@ -351,7 +352,7 @@ def main(argv: list[str] | None = None) -> int:
         clips,
         num_frames=config.num_frames,
         image_size=config.image_size,
-        duration=float(checkpoint.get("window_duration", 4.0)),
+        duration=checkpoint_window_duration(checkpoint),
         window_start=checkpoint.get("window_start"),
         time_frames=int(checkpoint.get("time_frames", config.audio_time)),
         normalizer=normalizer,

@@ -20,7 +20,12 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from savat.config import parse_config_args
-from savat.data import MultimodalDataset, discover_clips, grouped_split
+from savat.data import (
+    MultimodalDataset,
+    checkpoint_window_duration,
+    discover_clips,
+    grouped_split,
+)
 from savat.evaluate import (
     average_precision,
     confusion_matrix,
@@ -166,7 +171,7 @@ def linear_probe(args: argparse.Namespace) -> Path:
             selected,
             num_frames=config.num_frames,
             image_size=config.image_size,
-            duration=float(checkpoint.get("window_duration", 4.0)),
+            duration=checkpoint_window_duration(checkpoint),
             window_start=checkpoint.get("window_start"),
             time_frames=int(checkpoint.get("time_frames", config.audio_time)),
             normalizer=normalizer,
@@ -268,7 +273,8 @@ def linear_probe(args: argparse.Namespace) -> Path:
                 for key, value in probe.state_dict().items()
             }
 
-    assert best_state is not None
+    if best_state is None:
+        raise RuntimeError("no finite validation score was produced")
     probe.load_state_dict(best_state)
     probe.eval()
     results: dict[str, Any] = {}
@@ -289,16 +295,19 @@ def linear_probe(args: argparse.Namespace) -> Path:
     }
     results["best_val_macro_f1"] = best_score
     results["history"] = history
-    torch.save(
-        {
-            "state_dict": probe.state_dict(),
-            "class_names": class_names,
-            "feature_dim": int(train_features.shape[1]),
-            "source_checkpoint": str(args.checkpoint),
-            "config": checkpoint["config"],
-        },
-        args.output_dir / "probe.pt",
-    )
+    payload = {
+        "state_dict": probe.state_dict(),
+        "class_names": class_names,
+        "feature_dim": int(train_features.shape[1]),
+        "source_checkpoint": str(args.checkpoint),
+        "config": checkpoint["config"],
+    }
+    probe_path = args.output_dir / "probe.pt"
+    torch.save(payload, probe_path)
+    reloaded = torch.load(probe_path, map_location="cpu", weights_only=True)
+    for key, value in payload["state_dict"].items():
+        if not torch.equal(reloaded["state_dict"][key].cpu(), value.cpu()):
+            raise RuntimeError(f"probe checkpoint verification failed: {key}")
     write_json(args.output_dir / "metrics.json", results)
     print(
         f"test top1={results['test']['top1']:.4f} "

@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 import random
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,7 +32,14 @@ VIDEO_MEAN = (0.43216, 0.394666, 0.37645)
 VIDEO_STD = (0.22803, 0.22145, 0.216989)
 AUDIO_TIME_FRAMES = 256
 WINDOW_DURATION = 4.0
+# v1.0 checkpoints that predate the window metadata used a five-second window.
+LEGACY_WINDOW_DURATION = 5.0
 _GROUP_SUFFIX = re.compile(r"[_-]?\d+$")
+
+
+def checkpoint_window_duration(checkpoint: Mapping[str, object]) -> float:
+    """Return the stored window, or the historical 5 s fallback when absent."""
+    return float(checkpoint.get("window_duration", LEGACY_WINDOW_DURATION))
 
 
 @dataclass(frozen=True)

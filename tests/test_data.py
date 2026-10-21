@@ -12,6 +12,7 @@ import torch
 
 from savat.data import (
     ClipSample,
+    checkpoint_window_duration,
     decode_media,
     discover_clips,
     frames_to_tensor,
@@ -245,3 +246,8 @@ def test_discover_clips_ignores_directories_without_media(tmp_path: Path) -> Non
     clips, labels = discover_clips(root)
     assert labels == ["football", "tennis"]
     assert len(clips) == 8
+
+
+def test_checkpoint_window_duration_keeps_the_legacy_default() -> None:
+    assert checkpoint_window_duration({}) == pytest.approx(5.0)
+    assert checkpoint_window_duration({"window_duration": 4.0}) == pytest.approx(4.0)
