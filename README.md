@@ -307,5 +307,14 @@ Apache-2.0. See [LICENSE](LICENSE).
 }
 ```
 
-No software archive DOI has been assigned yet; one will be added to
-`CITATION.cff` only after a Zenodo deposit.
+@software{bouacha2026savat-archive,
+  title   = {{SAVAT}: Sports Audio-Visual Alignment Transformer for Action Spotting},
+  author  = {Bouacha, Lazhar and Wendling, Laurent and Kurtz, Camille},
+  version = {1.1.1},
+  year    = {2026},
+  doi     = {10.5281/zenodo.23605021}
+}
+```
+
+The `@inproceedings` entry identifies the conference paper. The `@software`
+entry identifies the archived software version that accompanies it.
