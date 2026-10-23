@@ -278,12 +278,20 @@ tests/             unit and smoke tests
 ```bash
 uv run ruff check .
 uv run ruff format --check .
+uv run mypy src
 uv run pytest
 uv build
 ```
 
 The tests build synthetic audio-visual clips with PyAV, so no external data is
-needed. CI runs lint, format, unit tests and a wheel build.
+needed. CI runs lint, format, type-check, unit tests and a wheel build.
+
+## Deterministic demo
+
+`demo/` contains a self-contained synthetic fixture and a recorded transcript
+of one complete pretrain → evaluate run. Reproduce it with `./demo/run_demo.sh`;
+see [`demo/TRANSCRIPT.md`](demo/TRANSCRIPT.md) for the recorded outputs and the
+reproducibility scope.
 
 ## Release history
 

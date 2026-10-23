@@ -1,0 +1,30 @@
+# Deterministic demo profile. Small enough to finish on a CPU laptop; these
+# are demo choices, not the paper protocol.
+data_root: demo/data/sportvista
+output_dir: demo/runs/savat_demo
+epochs: 2
+batch_size: 4
+learning_rate: 0.0001
+weight_decay: 0.05
+warmup_epochs: 1
+num_frames: 16
+window_duration: 2.0
+embed_dim: 32
+depth: 1
+heads: 2
+decoder_depth: 1
+dropout: 0.1
+video_mask_ratio: 0.75
+audio_mask_ratio: 0.50
+alignment_weight: 0.30
+video_reconstruction_weight: 0.40
+audio_reconstruction_weight: 0.30
+classification_weight: 0.0
+temperature: 0.07
+modality_dropout: 0.0
+same_class_negatives: true
+balanced_batches: true
+selection_metric: alignment_loss
+seed: 17
+validation_fraction: 0.2
+test_fraction: 0.2

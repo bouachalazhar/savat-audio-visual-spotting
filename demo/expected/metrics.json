@@ -1,0 +1,27 @@
+{
+  "checkpoint": "demo/runs/savat_demo/best.pt",
+  "class_names": [
+    "football",
+    "tennis"
+  ],
+  "clips": 24,
+  "confusion_matrix": [
+    [
+      0,
+      12
+    ],
+    [
+      0,
+      12
+    ]
+  ],
+  "data_root": "demo/data/sportvista",
+  "fusion": "joint",
+  "macro_f1": 0.3333333333333333,
+  "mean_average_precision": 0.632630425703181,
+  "per_class_average_precision": {
+    "football": 0.6329254852474665,
+    "tennis": 0.6323353661588955
+  },
+  "top1": 0.5
+}
