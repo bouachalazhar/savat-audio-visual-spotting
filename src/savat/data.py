@@ -14,6 +14,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import SupportsFloat
 
 import av
 import numpy as np
@@ -39,7 +40,10 @@ _GROUP_SUFFIX = re.compile(r"[_-]?\d+$")
 
 def checkpoint_window_duration(checkpoint: Mapping[str, object]) -> float:
     """Return the stored window, or the historical 5 s fallback when absent."""
-    return float(checkpoint.get("window_duration", LEGACY_WINDOW_DURATION))
+    value = checkpoint.get("window_duration", LEGACY_WINDOW_DURATION)
+    if isinstance(value, SupportsFloat):
+        return float(value)
+    return LEGACY_WINDOW_DURATION
 
 
 @dataclass(frozen=True)
@@ -252,6 +256,8 @@ def _decode_window(
         video_done = not has_video
         audio_done = not has_audio
         for frame in container.decode(*streams):
+            if not isinstance(frame, av.VideoFrame | av.AudioFrame):
+                continue
             timestamp = frame.time
             if timestamp is not None and timestamp < start:
                 continue

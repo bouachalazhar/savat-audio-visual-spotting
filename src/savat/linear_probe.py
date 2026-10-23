@@ -234,7 +234,7 @@ def linear_probe(args: argparse.Namespace) -> Path:
     best_state: dict[str, torch.Tensor] | None = None
     history: list[dict[str, float]] = []
     for epoch in range(1, args.epochs + 1):
-        if hasattr(sampler, "set_epoch"):
+        if isinstance(sampler, BalancedClassSampler):
             sampler.set_epoch(epoch)
         probe.train()
         started = time.perf_counter()

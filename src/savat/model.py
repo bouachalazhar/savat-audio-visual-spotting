@@ -61,7 +61,7 @@ class MaskedBranch(nn.Module):
 
     def __init__(
         self,
-        tokenizer: nn.Module,
+        tokenizer: PatchEmbed3D | PatchEmbed2D,
         patch_dim: int,
         token_count: int,
         *,
