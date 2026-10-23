@@ -307,6 +307,7 @@ Apache-2.0. See [LICENSE](LICENSE).
 }
 ```
 
+```bibtex
 @software{bouacha2026savat-archive,
   title   = {{SAVAT}: Sports Audio-Visual Alignment Transformer for Action Spotting},
   author  = {Bouacha, Lazhar and Wendling, Laurent and Kurtz, Camille},
