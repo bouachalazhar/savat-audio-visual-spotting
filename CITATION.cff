@@ -12,8 +12,8 @@ authors:
 repository-code: "https://github.com/bouachalazhar/savat-audio-visual-spotting"
 doi: "10.5281/zenodo.23605021"
 license: Apache-2.0
-version: "1.1.1"
-date-released: "2026-10-21"
+version: "1.2.0"
+date-released: "2026-10-24"
 preferred-citation:
   type: conference-paper
   title: "SAVAT: Sports Audio-Visual Alignment Transformer for Action Spotting"
