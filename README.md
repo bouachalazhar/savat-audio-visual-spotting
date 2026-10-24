@@ -230,8 +230,11 @@ This repository is a compact, runnable reimplementation of the method. The
 following points delimit what it reproduces:
 
 - The reported experiments initialise the encoders from CAV-MAE Sync. Those
-  weights are not redistributed here, so `savat-train` starts from random
-  initialisation by default.
+  weights are not redistributed here; `savat-fetch-init` fetches and verifies
+  the upstream file and `savat-train --init-from` transfers the
+  shape-compatible encoder layers (see
+  [Initialisation from CAV-MAE Sync](#initialisation-from-cav-mae-sync)).
+  Without `--init-from`, training starts from random initialisation.
 - The public joint head applies reliability weights to the two class tokens
   before concatenation. It is a feature-level analogue of the article's
   weighted fusion, not a line-by-line reproduction of its internal projection
@@ -272,6 +275,29 @@ src/savat/
 configs/           pretraining, transfer and probe profiles
 tests/             unit and smoke tests
 ```
+
+## Initialisation from CAV-MAE Sync
+
+The reported experiments start the two modality encoders from the CAV-MAE
+Sync transformer layers (upstream project: edsonroteia/cav-mae-sync,
+BSD-2-Clause). This repository does not redistribute those weights; the fetch
+command downloads the upstream file with a pinned SHA-256 check:
+
+```bash
+uv run savat-fetch-init
+uv run savat-train --config configs/pretrain_sportvista.yaml --init-from downloads/cav_mae_sync.pth
+```
+
+`--init-from` transfers, branch by branch and layer by layer, every
+shape-compatible upstream encoder layer (`blocks_v` / `blocks_a`); the fused
+upstream `qkv` attention is exactly the projection `nn.MultiheadAttention`
+uses, so shapes match whenever the profile uses the upstream dimensions
+(`embed_dim: 768`, `depth >= 11`, `heads: 12`, four-fold feed-forward). With
+any other profile the printed report states clearly that nothing matched and
+training keeps its own initialisation. Upstream tokenisers, positional and
+register tokens, the decoder and the shared `blocks_u` fusion layer have no
+SAVAT counterpart and always keep their own initialisation; the report at
+startup quantifies what was transferred and what was left alone.
 
 ## Tests
 

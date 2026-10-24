@@ -43,6 +43,7 @@ from savat.data import (
     grouped_split,
 )
 from savat.evaluate import evaluate_model
+from savat.initialisation import apply_init_from
 from savat.model import SAVAT, SAVATConfig, SAVATOutput, count_parameters
 from savat.sampling import BalancedClassSampler
 from savat.utils import resolve_device, seed_everything, write_json
@@ -160,7 +161,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--device", default="auto")
-    parser.add_argument("--deterministic", action="store_true")
+    parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="enable deterministic algorithm selection",
+    )
+    parser.add_argument(
+        "--init-from",
+        type=Path,
+        default=None,
+        help=(
+            "warm-start path: a SAVAT checkpoint, or the CAV-MAE Sync file"
+            " fetched with savat-fetch-init (only shape-compatible encoder"
+            " layers are transferred)"
+        ),
+    )
     parser.add_argument("--validation-fraction", type=float, default=0.15)
     parser.add_argument("--test-fraction", type=float, default=0.15)
     return parser
@@ -556,6 +571,11 @@ def train(args: argparse.Namespace) -> Path:
         num_classes=len(class_names),
     )
     model: nn.Module = SAVAT(config).to(device)
+    if args.init_from is not None:
+        # Loaded before the DDP wrap so every rank sees the same weights; the
+        # file is the single shared source on disk.
+        init_report = apply_init_from(model, args.init_from)
+        print(init_report.summary())
     if distributed:
         model = DDP(model, device_ids=[local_rank] if device.type == "cuda" else None)
 
