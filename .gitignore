@@ -7,6 +7,7 @@ build/
 runs/
 data/
 models/
+downloads/
 demo/data/
 demo/metrics.json
 .pytest_cache/

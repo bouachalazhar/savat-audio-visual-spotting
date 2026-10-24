@@ -31,6 +31,7 @@ savat-train = "savat.train:main"
 savat-evaluate = "savat.evaluate:main"
 savat-robustness = "savat.robustness:main"
 savat-linear-probe = "savat.linear_probe:main"
+savat-fetch-init = "savat.fetch:main"
 
 [build-system]
 requires = ["hatchling"]
