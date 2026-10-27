@@ -10,7 +10,7 @@ authors:
   - family-names: Kurtz
     given-names: Camille
 repository-code: "https://github.com/bouachalazhar/savat-audio-visual-spotting"
-doi: "10.5281/zenodo.23605021"
+doi: "10.5281/zenodo.23626759"
 license: Apache-2.0
 version: "1.2.0"
 date-released: "2026-10-24"
