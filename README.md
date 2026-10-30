@@ -347,7 +347,7 @@ Apache-2.0. See [LICENSE](LICENSE).
   author  = {Bouacha, Lazhar and Wendling, Laurent and Kurtz, Camille},
   version = {1.2.0},
   year    = {2026},
-  doi     = {10.5281/zenodo.23626759}
+  doi     = {10.5281/zenodo.23809251}
 }
 ```
 
